@@ -1,0 +1,37 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Wrangler
+.wrangler/
+.dev.vars
+wrangler.toml.backup
+
+# 環境変数
+.env
+.env.local
+.env.*.local
+
+# ビルド成果物
+dist/
+build/
+
+# エディタ
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ログ
+*.log
+
+# テスト
+coverage/
+.nyc_output/

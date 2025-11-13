@@ -1,0 +1,16 @@
+{
+  "name": "lark-budget-export",
+  "version": "1.0.0",
+  "description": "Lark Base予実管理から本部提出書類を自動生成",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
