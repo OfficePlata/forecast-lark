@@ -17,10 +17,8 @@
   ],
   "author": "",
   "license": "MIT",
-  "dependencies": {
-    "exceljs": "^4.4.0"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "wrangler": "^3.0.0"
+    "wrangler": "^3.78.0"
   }
 }
