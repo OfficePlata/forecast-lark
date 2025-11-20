@@ -272,94 +272,144 @@ function handleIndex(corsHeaders) {
 /**
  * 書類生成API
  */
+/**
+ * 書類生成API (エラーログ追加版)
+ */
 async function handleExport(request, env, corsHeaders) {
-  if (request.method !== 'POST') {
-    return new Response('Method Not Allowed', { 
-      status: 405, 
-      headers: corsHeaders 
+  try {
+    console.log('[handleExport] Starting export process');
+    
+    if (request.method !== 'POST') {
+      return new Response('Method Not Allowed', { 
+        status: 405, 
+        headers: corsHeaders 
+      });
+    }
+
+    const { year, term } = await request.json();
+    console.log('[handleExport] Request params:', { year, term });
+
+    // バリデーション
+    if (!year || !term) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: '年度と期を指定してください' 
+      }), {
+        status: 400,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        }
+      });
+    }
+
+    // Lark APIクライアントを初期化
+    console.log('[handleExport] Initializing Lark client');
+    console.log('[handleExport] Env vars:', {
+      hasAppId: !!env.LARK_APP_ID,
+      hasAppSecret: !!env.LARK_APP_SECRET,
+      hasAppToken: !!env.LARK_APP_TOKEN,
+      hasTableId: !!env.LARK_TABLE_ID
     });
-  }
+    
+    const larkClient = new LarkClient(
+      env.LARK_APP_ID,
+      env.LARK_APP_SECRET,
+      env.LARK_APP_TOKEN,
+      env.LARK_TABLE_ID
+    );
 
-  const { year, term } = await request.json();
+    // データを取得
+    console.log('[handleExport] Fetching records from Lark');
+    const records = await larkClient.getForecastRecords({ year });
+    console.log('[handleExport] Fetched records:', records ? records.length : 0);
+    
+    // データを処理
+    console.log('[handleExport] Processing records');
+    const groupedData = larkClient.processRecords(records, { 
+      year, 
+      term, 
+      excludeStatus: ['キャンセル'] 
+    });
+    console.log('[handleExport] Grouped data categories:', Object.keys(groupedData));
+    
+    const summary = larkClient.calculateSummary(groupedData);
+    console.log('[handleExport] Summary calculated');
 
-  // バリデーション
-  if (!year || !term) {
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: '年度と期を指定してください' 
+    // Excelファイルを生成(軽量版 - Cloudflare Workers対応)
+    console.log('[handleExport] Generating Excel file');
+    const generator = new ExcelSimple();
+    const buffer = await generator.generateBudgetReport(groupedData, summary, year, term);
+    console.log('[handleExport] Excel file generated, size:', buffer.byteLength);
+
+    // R2に保存
+    const filename = `神戸予算_${year}${term}_${Date.now()}.xlsx`;
+    const key = `exports/${year}/${term}/${filename}`;
+    console.log('[handleExport] Saving to R2:', key);
+    
+    if (env.BUDGET_FILES) {
+      await env.BUDGET_FILES.put(key, buffer, {
+        httpMetadata: {
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }
+      });
+      console.log('[handleExport] Saved to R2');
+    } else {
+      console.log('[handleExport] R2 bucket not configured, skipping save');
+    }
+
+    // ダウンロードURLを生成
+    const downloadUrl = `/files/${key}`;
+    console.log('[handleExport] Download URL:', downloadUrl);
+
+    // ログをD1に保存(オプション)
+    if (env.DB) {
+      try {
+        await env.DB.prepare(
+          'INSERT INTO export_logs (year, term, filename, created_at) VALUES (?, ?, ?, ?)'
+        ).bind(year, term, filename, new Date().toISOString()).run();
+        console.log('[handleExport] Log saved to D1');
+      } catch (error) {
+        console.error('[handleExport] Failed to save log:', error);
+      }
+    }
+
+    console.log('[handleExport] Export completed successfully');
+    return new Response(JSON.stringify({
+      success: true,
+      filename,
+      downloadUrl,
+      summary: {
+        totalRecords: Object.values(groupedData).flat().length,
+        totalSalesPrice: summary.total ? summary.total.salesPrice : 0,
+        totalProfit: summary.total ? summary.total.profit : 0,
+        profitRate: summary.total ? summary.total.profitRate : 0
+      }
     }), {
-      status: 400,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      }
+    });
+  } catch (error) {
+    console.error('[handleExport] Error:', error);
+    console.error('[handleExport] Error message:', error.message);
+    console.error('[handleExport] Error stack:', error.stack);
+    
+    return new Response(JSON.stringify({ 
+      success: false,
+      error: error.message,
+      stack: error.stack
+    }), {
+      status: 500,
       headers: {
         ...corsHeaders,
         'Content-Type': 'application/json'
       }
     });
   }
+}
 
-  // Lark APIクライアントを初期化
-  const larkClient = new LarkClient(
-    env.LARK_APP_ID,
-    env.LARK_APP_SECRET,
-    env.LARK_APP_TOKEN,
-    env.LARK_TABLE_ID
-  );
-
-  // データを取得
-  const records = await larkClient.getForecastRecords({ year });
-  
-  // データを処理
-  const groupedData = larkClient.processRecords(records, { 
-    year, 
-    term, 
-    excludeStatus: ['キャンセル'] 
-  });
-  
-  const summary = larkClient.calculateSummary(groupedData);
-
-  // Excelファイルを生成(軽量版 - Cloudflare Workers対応)
-  const generator = new ExcelSimple();
-  const buffer = await generator.generateBudgetReport(groupedData, summary, year, term);
-
-  // R2に保存
-  const filename = `神戸予算_${year}${term}_${Date.now()}.xlsx`;
-  const key = `exports/${year}/${term}/${filename}`;
-  
-  await env.BUDGET_FILES.put(key, buffer, {
-    httpMetadata: {
-      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    }
-  });
-
-  // ダウンロードURLを生成
-  const downloadUrl = `/files/${key}`;
-
-  // ログをD1に保存(オプション)
-  if (env.DB) {
-    try {
-      await env.DB.prepare(
-        'INSERT INTO export_logs (year, term, filename, created_at) VALUES (?, ?, ?, ?)'
-      ).bind(year, term, filename, new Date().toISOString()).run();
-    } catch (error) {
-      console.error('Failed to save log:', error);
-    }
-  }
-
-  return new Response(JSON.stringify({
-    success: true,
-    filename,
-    downloadUrl,
-    summary: {
-      totalRecords: Object.values(groupedData).flat().length,
-      totalSalesPrice: summary.total.salesPrice,
-      totalProfit: summary.total.profit,
-      profitRate: summary.total.profitRate
-    }
-  }), {
-    headers: {
-      ...corsHeaders,
-      'Content-Type': 'application/json'
-    }
-  });
 }
 
 /**
