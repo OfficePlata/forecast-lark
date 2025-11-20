@@ -6,6 +6,7 @@
 import { LarkClient } from './lark-client.js';
 import { ExcelGenerator } from './excel-generator.js';
 import { ExcelFormatExact } from './excel-format-exact.js';
+import { ExcelSimple } from './excel-simple.js';
 import { SheetsClient } from './sheets-client.js';
 
 export default {
@@ -315,8 +316,8 @@ async function handleExport(request, env, corsHeaders) {
   
   const summary = larkClient.calculateSummary(groupedData);
 
-  // Excelファイルを生成(フォーマット完全再現版)
-  const generator = new ExcelFormatExact();
+  // Excelファイルを生成(軽量版 - Cloudflare Workers対応)
+  const generator = new ExcelSimple();
   const buffer = await generator.generateBudgetReport(groupedData, summary, year, term);
 
   // R2に保存
