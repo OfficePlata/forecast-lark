@@ -237,16 +237,36 @@ function handleIndex(corsHeaders) {
           throw new Error(\`HTTP error! status: \${response.status}\`);
         }
         
-        const data = await response.json();
+        // Content-Typeをチェック
+        const contentType = response.headers.get('Content-Type');
         
-        if (data.success) {
+        if (contentType && contentType.includes('application/vnd.openxmlformats')) {
+          // Excelファイルが直接返される場合
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = \`神戸予算_\${year}\${term}_\${Date.now()}.xlsx\`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+          
           status.className = 'status success';
-          status.innerHTML = \`
-            ✅ 書類の生成が完了しました!<br>
-            <a href="\${data.downloadUrl}" class="download-link" download>📥 ダウンロード</a>
-          \`;
+          status.textContent = '✅ 書類のダウンロードが完了しました!';
         } else {
-          throw new Error(data.error || '生成に失敗しました');
+          // JSONレスポンスの場合(R2バケット使用時)
+          const data = await response.json();
+          
+          if (data.success) {
+            status.className = 'status success';
+            status.innerHTML = \`
+              ✅ 書類の生成が完了しました!<br>
+              <a href="\${data.downloadUrl}" class="download-link" download>📥 ダウンロード</a>
+            \`;
+          } else {
+            throw new Error(data.error || '生成に失敗しました');
+          }
         }
       } catch (error) {
         status.className = 'status error';
