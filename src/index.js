@@ -5,6 +5,8 @@
 
 import { LarkClient } from './lark-client.js';
 import { ExcelGenerator } from './excel-generator.js';
+import { ExcelFormatExact } from './excel-format-exact.js';
+import { SheetsClient } from './sheets-client.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -28,6 +30,8 @@ export default {
         return handleIndex(corsHeaders);
       } else if (url.pathname === '/api/export') {
         return await handleExport(request, env, corsHeaders);
+      } else if (url.pathname === '/api/export-to-sheets') {
+        return await handleExportToSheets(request, env, corsHeaders);
       } else if (url.pathname === '/api/status') {
         return handleStatus(env, corsHeaders);
       } else if (url.pathname.startsWith('/files/')) {
@@ -311,8 +315,8 @@ async function handleExport(request, env, corsHeaders) {
   
   const summary = larkClient.calculateSummary(groupedData);
 
-  // Excelファイルを生成
-  const generator = new ExcelGenerator();
+  // Excelファイルを生成(フォーマット完全再現版)
+  const generator = new ExcelFormatExact();
   const buffer = await generator.generateBudgetReport(groupedData, summary, year, term);
 
   // R2に保存
@@ -369,6 +373,95 @@ function handleStatus(env, corsHeaders) {
       hasR2Bucket: !!env.BUDGET_FILES,
       hasDatabase: !!env.DB
     }
+  }), {
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'application/json'
+    }
+  });
+}
+
+/**
+ * ファイルダウンロード
+ */
+/**
+ * Googleスプレッドシートへのエクスポート
+ */
+async function handleExportToSheets(request, env, corsHeaders) {
+  if (request.method !== 'POST') {
+    return new Response('Method Not Allowed', { 
+      status: 405, 
+      headers: corsHeaders 
+    });
+  }
+
+  const { year, term, spreadsheetId } = await request.json();
+
+  // バリデーション
+  if (!year || !term || !spreadsheetId) {
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: '年度、期、スプレッドシートIDを指定してください' 
+    }), {
+      status: 400,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json'
+      }
+    });
+  }
+
+  // Lark APIクライアントを初期化
+  const larkClient = new LarkClient(
+    env.LARK_APP_ID,
+    env.LARK_APP_SECRET,
+    env.LARK_APP_TOKEN,
+    env.LARK_TABLE_ID
+  );
+
+  // データを取得
+  const records = await larkClient.getForecastRecords({ year });
+  
+  // データを処理
+  const groupedData = larkClient.processRecords(records, { 
+    year, 
+    term, 
+    excludeStatus: ['キャンセル'] 
+  });
+  
+  const summary = larkClient.calculateSummary(groupedData);
+
+  // Google Sheetsクライアントを初期化
+  const sheetsClient = new SheetsClient(
+    env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    env.GOOGLE_PRIVATE_KEY
+  );
+
+  // スプレッドシートに書き込む
+  const result = await sheetsClient.writeBudgetData(
+    spreadsheetId,
+    groupedData,
+    summary,
+    year,
+    term
+  );
+
+  // ログをD1に保存(オプション)
+  if (env.DB) {
+    try {
+      await env.DB.prepare(
+        'INSERT INTO export_logs (year, term, filename, created_at) VALUES (?, ?, ?, ?)'
+      ).bind(year, term, `spreadsheet_${spreadsheetId}`, new Date().toISOString()).run();
+    } catch (error) {
+      console.error('Failed to save log:', error);
+    }
+  }
+
+  return new Response(JSON.stringify({
+    success: true,
+    spreadsheetUrl: result.spreadsheetUrl,
+    rowsWritten: result.rowsWritten,
+    summary: result.summary
   }), {
     headers: {
       ...corsHeaders,
