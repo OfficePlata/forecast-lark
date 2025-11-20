@@ -375,6 +375,19 @@ async function handleExport(request, env, corsHeaders) {
     }
 
     console.log('[handleExport] Export completed successfully');
+    
+    // R2が設定されていない場合は、Excelファイルを直接返す
+    if (!env.BUDGET_FILES) {
+      return new Response(buffer, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"`
+        }
+      });
+    }
+    
+    // R2が設定されている場合は、ダウンロードURLを返す
     return new Response(JSON.stringify({
       success: true,
       filename,

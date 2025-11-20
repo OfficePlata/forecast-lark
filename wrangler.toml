@@ -10,12 +10,14 @@ LARK_APP_TOKEN = "EXiXbTVHha8p7osOl4KjogMBp7e"
 LARK_TABLE_ID = "tbl0Gz18u2wMAjWl"
 
 # R2バケット(ファイル保存用)
-[[r2_buckets]]
-binding = "BUDGET_FILES"
-bucket_name = "lark-budget-files"
+# デプロイ後にCloudflareダッシュボードで手動でバインドしてください
+# [[r2_buckets]]
+# binding = "BUDGET_FILES"
+# bucket_name = "lark-budget-files"
 
 # D1データベース(オプション: ログ保存用)
-[[d1_databases]]
-binding = "DB"
-database_name = "lark-budget-db"
-database_id = "c0f7d03a-e128-4a22-b990-720df872301f"
+# デプロイ後にCloudflareダッシュボードで手動でバインドしてください
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "lark-budget-db"
+# database_id = "c0f7d03a-e128-4a22-b990-720df872301f"
